@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.os.PowerManager
 import androidx.annotation.RequiresPermission
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
@@ -45,6 +46,7 @@ class LocationSenderService : LifecycleService() {
     private val commandRouter = ServiceCommandRouter()
     private var transmissionNotificationJob: Job? = null
     private var lastHandledStartId = 0
+    private var transmissionWakeLock: PowerManager.WakeLock? = null
 
     // The BLE/location graph is app-scoped (see [AppServices]); the service
     // borrows it for the duration of a foreground session.
@@ -109,6 +111,11 @@ class LocationSenderService : LifecycleService() {
         lifecycleScope.launch {
             orchestrator.events.collect { event -> handleEvent(event) }
         }
+        lifecycleScope.launch {
+            orchestrator.locationManager.isActive.collect { active ->
+                if (active) acquireTransmissionWakeLock() else releaseTransmissionWakeLock()
+            }
+        }
         transmissionNotificationJob = TransmissionNotificationCoordinator(
             scope = lifecycleScope,
             sessions = orchestrator.sessions,
@@ -121,6 +128,7 @@ class LocationSenderService : LifecycleService() {
     @SuppressLint("MissingPermission")
     override fun onDestroy() {
         isRunning = false
+        releaseTransmissionWakeLock()
         // Stop publishing before shutdown clears sessions; teardown must not repost standby.
         transmissionNotificationJob?.cancel()
         super.onDestroy()
@@ -319,6 +327,33 @@ class LocationSenderService : LifecycleService() {
             return false
         }
         return true
+    }
+
+    /**
+     * Holds the CPU awake while location is being sent to a camera. The periodic
+     * resend is a main-looper delay, and the looper's clock stops while the kernel
+     * is suspended, so without this lock the camera stops receiving location once
+     * the screen has been off long enough for the phone to suspend.
+     */
+    @SuppressLint("WakelockTimeout")
+    private fun acquireTransmissionWakeLock() {
+        val lock = transmissionWakeLock
+            ?: getSystemService(PowerManager::class.java)
+                .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "AlphaGPS:LocationTransmission")
+                .apply { setReferenceCounted(false) }
+                .also { transmissionWakeLock = it }
+        if (!lock.isHeld) {
+            lock.acquire()
+            Timber.i("Acquired transmission wake lock")
+        }
+    }
+
+    private fun releaseTransmissionWakeLock() {
+        val lock = transmissionWakeLock ?: return
+        if (lock.isHeld) {
+            lock.release()
+            Timber.i("Released transmission wake lock")
+        }
     }
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)

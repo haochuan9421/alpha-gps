@@ -50,6 +50,9 @@
      it seems like especially oppo devices like to shutdown the foregroundservice as soon as the screen is locked -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
+    <!-- keeps the CPU running between periodic location writes while location is being sent to a camera -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
 
     <application
         android:name=".CameraGpsApplication"
