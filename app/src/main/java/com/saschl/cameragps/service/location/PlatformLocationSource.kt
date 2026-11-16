@@ -5,6 +5,7 @@ import android.content.Context
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.location.LocationRequest
 import android.os.Build
 import android.os.Looper
 import com.sasch.cameragps.sharednew.bluetooth.SonyBluetoothConstants.LOCATION_UPDATE_INTERVAL_MS
@@ -112,12 +113,17 @@ class PlatformLocationSource(
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             if (locManager.isProviderEnabled(LocationManager.FUSED_PROVIDER)) {
+                // ColorOS's fused provider turns on GNSS only for HIGH_ACCURACY requests with
+                // an interval of at most 5 s; any other request gets network locations only.
+                val request = LocationRequest.Builder(LOCATION_UPDATE_INTERVAL_MS)
+                    .setQuality(LocationRequest.QUALITY_HIGH_ACCURACY)
+                    .setMinUpdateDistanceMeters(10f)
+                    .build()
                 locManager.requestLocationUpdates(
                     LocationManager.FUSED_PROVIDER,
-                    LOCATION_UPDATE_INTERVAL_MS,
-                    10f,
+                    request,
+                    context.mainExecutor,
                     listener,
-                    Looper.getMainLooper(),
                 )
                 Timber.i("Started location updates from FUSED provider (Android 12+)")
             } else {
