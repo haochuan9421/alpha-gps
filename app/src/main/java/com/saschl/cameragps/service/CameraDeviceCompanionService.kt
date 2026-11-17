@@ -98,7 +98,11 @@ class CameraDeviceCompanionService : CompanionDeviceService() {
         val associationInfo = associatedDevices?.find { it.id == associationId }
         val address = associationInfo?.deviceMacAddress?.toString()
 
-        if (event.event == DevicePresenceEvent.EVENT_BLE_APPEARED) {
+        // A camera whose link is already up, such as the bonding connection left open
+        // right after pairing, does not advertise, so it is reported only as BT_CONNECTED.
+        if (event.event == DevicePresenceEvent.EVENT_BLE_APPEARED ||
+            event.event == DevicePresenceEvent.EVENT_BT_CONNECTED
+        ) {
             startLocationSenderService(address)
         }
 
